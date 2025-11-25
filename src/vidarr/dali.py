@@ -13,9 +13,6 @@ def apply_training_augmentations(images, image_size):
 
     images = images.gpu()
 
-    rng = fn.random.coin_flip(probability=0.5)
-    images = fn.flip(images, horizontal=rng, vertical=rng)
-
     images = fn.crop_mirror_normalize(
         images,
         crop_h=224,
