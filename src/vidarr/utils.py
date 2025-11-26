@@ -1,4 +1,5 @@
 import torch
+import wandb
 
 
 def freeze_model(model):
@@ -18,3 +19,33 @@ def timed(fn):
     training_time_ms = start_event.elapsed_time(end_event)
     training_time_s = training_time_ms / 1000.0
     return result, training_time_s
+
+
+def model_num_params(model):
+    non_embedding_params = sum(
+        param.numel() for name, param in model.named_parameters() if "embed" not in name
+    )
+    return non_embedding_params
+
+
+def initial_write(
+    global_batch_size: int,
+    learning_rate: float,
+    num_training_epochs: int,
+    gradient_accumulation_steps: int,
+    model_name: str,
+    dataset_name: str,
+):
+    writer = wandb.init(
+        entity="teraflopai",
+        project="classifiers",
+        name=f"BS: {global_batch_size} LR: {learning_rate}",
+        config={
+            "learning_rate": learning_rate,
+            "model": model_name,
+            "dataset": dataset_name,
+            "epochs": num_training_epochs,
+            "gradient accumulation steps": gradient_accumulation_steps,
+        },
+    )
+    return writer

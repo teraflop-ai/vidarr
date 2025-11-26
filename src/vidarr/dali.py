@@ -46,3 +46,7 @@ def dali_train_loader(images_dir: str, batch_size: int = 128):
         reader_name="Reader",
     )
     return train_loader
+
+
+def dali_val_loader():
+    pass
