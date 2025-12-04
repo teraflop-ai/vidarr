@@ -29,6 +29,8 @@ def model_num_params(model):
 
 
 def initial_write(
+    entity: str,
+    project: str,
     global_batch_size: int,
     learning_rate: float,
     num_training_epochs: int,
@@ -37,8 +39,8 @@ def initial_write(
     dataset_name: str,
 ):
     writer = wandb.init(
-        entity="teraflopai",
-        project="classifiers",
+        entity=entity,
+        project=project,
         name=f"BS: {global_batch_size} LR: {learning_rate}",
         config={
             "learning_rate": learning_rate,
