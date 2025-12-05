@@ -5,8 +5,11 @@ import wandb
 def freeze_model(model):
     for param in model.parameters():
         param.requires_grad = False
-    for param in model.classifier.parameters():
+    for param in model.head.fc.parameters():
         param.requires_grad = True
+
+    trainable = [n for n, p in model.named_parameters() if p.requires_grad]
+    print("Trainable parameters:", trainable)
 
 
 def timed(fn):

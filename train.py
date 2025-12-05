@@ -1,19 +1,24 @@
+import math
+
 import numpy as np
 import timm
 import torch
 import torch.nn as nn
 from torch import optim
 from torch.profiler import profile
+from transformers import get_wsd_schedule
 
 from src.vidarr.dali import dali_train_loader
-from src.vidarr.utils import timed
+from src.vidarr.utils import freeze_model, timed
 
 torch.set_float32_matmul_precision("high")
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 
 
-images_dir = ""
+images_dir = "/image_datasets/jpeg_experiment"
+num_epochs = 20
+batch_size = 256
 
 
 def load_model(
@@ -41,14 +46,41 @@ def load_criterion():
     return criterion
 
 
+def load_lr_scheduler():
+    num_warmup_steps = int(total_training_steps * 0.10)
+    num_decay_steps = int(total_training_steps * 0.10)
+    num_train_steps = total_training_steps - num_warmup_steps - num_decay_steps
+
+    lr_scheduler = get_wsd_schedule(
+        optimizer=optimizer,
+        num_warmup_steps=num_warmup_steps,
+        num_training_steps=num_train_steps,
+        num_decay_steps=num_decay_steps,
+    )
+    return lr_scheduler
+
+
 def train_step(inputs, labels):
     optimizer.zero_grad(set_to_none=True)
-    with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
+    with torch.amp.autocast(
+        device_type="cuda", dtype=torch.float16 if scaler else torch.bfloat16
+    ):
         pred = model(inputs)
         loss = criterion(pred, labels)
-    scaler.scale(loss).backward()
-    scaler.step(optimizer)
-    scaler.update()
+
+    if scaler:
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        old_scaler = scaler.get_scale()
+        scaler.update()
+        new_scaler = scaler.get_scale()
+        if new_scaler >= old_scaler:
+            lr_scheduler.step()
+    else:
+        loss.backward()
+        optimizer.step()
+        lr_scheduler.step()
+
     return loss
 
 
@@ -56,36 +88,46 @@ def val_step():
     pass
 
 
-model = load_model(model_name="timm/efficientvit_b2.r288_in1k")  # "tiny_vit_21m_224"
+train_data = dali_train_loader(
+    images_dir=images_dir, batch_size=batch_size, num_threads=8
+)
+steps_per_epoch = math.ceil(train_data._size / batch_size)
+total_training_steps = num_epochs * steps_per_epoch
+
+model = load_model(
+    model_name="tiny_vit_21m_224"
+)  # "tiny_vit_21m_224" "timm/efficientvit_b2.r288_in1k"
+freeze_model(model=model)
+
 optimizer = load_optimizer(model=model)
 criterion = load_criterion()
+lr_scheduler = load_lr_scheduler()
 scaler = torch.amp.GradScaler()
 
 train_step = torch.compile(
     train_step, fullgraph=False, backend="inductor", mode="max-autotune"
 )
 
-train_data = dali_train_loader(images_dir=images_dir, batch_size=256, num_threads=8)
-
-num_epochs = 5
-
 model.train()
-for epoch in range(num_epochs):
-    timed_steps = []
-    with profile(
-        schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
-        on_trace_ready=torch.profiler.tensorboard_trace_handler("./log/tinyvit"),
-        record_shapes=True,
-        profile_memory=True,
-        with_stack=True,
-    ) as prof:
+
+with profile(
+    schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+    on_trace_ready=torch.profiler.tensorboard_trace_handler("./log/tinyvit"),
+    record_shapes=True,
+    profile_memory=True,
+    with_stack=True,
+) as prof:
+    for epoch in range(num_epochs):
+        timed_steps = []
+        epoch_loss = 0
         for step, batch_data in enumerate(train_data):
             inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
             labels = batch_data[0]["label"].float()
             loss, times = timed(lambda: train_step(inputs, labels))
             prof.step()
             timed_steps.append(times)
-            if step % 10 == 0:
-                print(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {loss.item():.4f}")
-    med = np.median(timed_steps)
-    print(f"epoch: {epoch + 1}, median step time: {med}")
+            epoch_loss += loss.item()
+        train_data.reset()
+        med = np.median(timed_steps)
+        avg_loss = epoch_loss / (step + 1)
+        print(f"epoch: {epoch + 1}, median step time: {med:.4f}, loss: {avg_loss:.4f}")
