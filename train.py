@@ -74,6 +74,8 @@ def train_step(inputs, labels):
         pred = model(inputs)
         loss = criterion(pred, labels)
 
+    metric.update(pred.detach().cpu(), labels.detach().cpu())
+
     if scaler:
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -125,6 +127,7 @@ with profile(
     with_stack=True,
 ) as prof:
     for epoch in range(num_epochs):
+        metric.reset()
         timed_steps = []
         epoch_loss = 0
         pbar = tqdm(total=len(train_data), desc="Training")
@@ -138,7 +141,7 @@ with profile(
             pbar.set_postfix(
                 {
                     "epoch": (epoch + 1),
-                    # accuracy=metric.compute().item(),
+                    "accuracy": metric.compute().item(),
                     "avg_loss": epoch_loss / (step + 1),
                     "lr": lr_scheduler.get_last_lr()[0],
                     "median step time": np.median(timed_steps),
