@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.profiler import profile
+from torchmetrics.classification import BinaryAccuracy
+from tqdm import tqdm
 from transformers import get_wsd_schedule
 
 from src.vidarr.dali import dali_train_loader
@@ -19,6 +21,9 @@ torch.backends.cuda.matmul.allow_tf32 = True
 images_dir = "/image_datasets/jpeg_experiment"
 num_epochs = 20
 batch_size = 256
+learning_rate = 3e-5
+warmup_steps = 0.10
+decay_steps = 0.10
 
 
 def load_model(
@@ -34,7 +39,7 @@ def load_model(
     return model
 
 
-def load_optimizer(model, lr: float = 3e-5, fused: bool = True):
+def load_optimizer(model, lr: float, fused: bool = True):
     optimizer = optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()), lr=lr, fused=fused
     )
@@ -46,9 +51,9 @@ def load_criterion():
     return criterion
 
 
-def load_lr_scheduler():
-    num_warmup_steps = int(total_training_steps * 0.10)
-    num_decay_steps = int(total_training_steps * 0.10)
+def load_lr_scheduler(warmup_steps: float, decay_steps: float):
+    num_warmup_steps = int(total_training_steps * warmup_steps)
+    num_decay_steps = int(total_training_steps * decay_steps)
     num_train_steps = total_training_steps - num_warmup_steps - num_decay_steps
 
     lr_scheduler = get_wsd_schedule(
@@ -63,7 +68,8 @@ def load_lr_scheduler():
 def train_step(inputs, labels):
     optimizer.zero_grad(set_to_none=True)
     with torch.amp.autocast(
-        device_type="cuda", dtype=torch.float16 if scaler else torch.bfloat16
+        device_type="cuda",
+        dtype=torch.float16 if scaler is not None else torch.bfloat16,
     ):
         pred = model(inputs)
         loss = criterion(pred, labels)
@@ -99,10 +105,11 @@ model = load_model(
 )  # "tiny_vit_21m_224" "timm/efficientvit_b2.r288_in1k"
 freeze_model(model=model)
 
-optimizer = load_optimizer(model=model)
+optimizer = load_optimizer(model=model, lr=learning_rate)
 criterion = load_criterion()
-lr_scheduler = load_lr_scheduler()
+lr_scheduler = load_lr_scheduler(warmup_steps=warmup_steps, decay_steps=decay_steps)
 scaler = torch.amp.GradScaler()
+metric = BinaryAccuracy()
 
 train_step = torch.compile(
     train_step, fullgraph=False, backend="inductor", mode="max-autotune"
@@ -120,6 +127,7 @@ with profile(
     for epoch in range(num_epochs):
         timed_steps = []
         epoch_loss = 0
+        pbar = tqdm(total=len(train_data), desc="Training")
         for step, batch_data in enumerate(train_data):
             inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
             labels = batch_data[0]["label"].float()
@@ -127,7 +135,16 @@ with profile(
             prof.step()
             timed_steps.append(times)
             epoch_loss += loss.item()
+            pbar.set_postfix(
+                {
+                    "epoch": (epoch + 1),
+                    # accuracy=metric.compute().item(),
+                    "avg_loss": epoch_loss / (step + 1),
+                    "lr": lr_scheduler.get_last_lr()[0],
+                    "median step time": np.median(timed_steps),
+                }
+            )
+
+            pbar.update()
         train_data.reset()
-        med = np.median(timed_steps)
-        avg_loss = epoch_loss / (step + 1)
-        print(f"epoch: {epoch + 1}, median step time: {med:.4f}, loss: {avg_loss:.4f}")
+        pbar.close()
