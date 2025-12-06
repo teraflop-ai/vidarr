@@ -19,7 +19,7 @@ torch.backends.cuda.matmul.allow_tf32 = True
 
 
 images_dir = "/image_datasets/jpeg_experiment"
-num_epochs = 20
+num_epochs = 30
 batch_size = 256
 learning_rate = 3e-5
 warmup_steps = 0.10
@@ -51,7 +51,9 @@ def load_criterion():
     return criterion
 
 
-def load_lr_scheduler(warmup_steps: float, decay_steps: float):
+def load_lr_scheduler(
+    total_training_steps: int, warmup_steps: float, decay_steps: float
+):
     num_warmup_steps = int(total_training_steps * warmup_steps)
     num_decay_steps = int(total_training_steps * decay_steps)
     num_train_steps = total_training_steps - num_warmup_steps - num_decay_steps
@@ -103,13 +105,17 @@ steps_per_epoch = math.ceil(train_data._size / batch_size)
 total_training_steps = num_epochs * steps_per_epoch
 
 model = load_model(
-    model_name="tiny_vit_21m_224"
-)  # "tiny_vit_21m_224" "timm/efficientvit_b2.r288_in1k"
-freeze_model(model=model)
+    model_name="timm/efficientvit_b2.r224_in1k"
+)  # "tiny_vit_21m_224" "timm/efficientvit_b2.r224_in1k"
+model = freeze_model(model=model)
 
 optimizer = load_optimizer(model=model, lr=learning_rate)
 criterion = load_criterion()
-lr_scheduler = load_lr_scheduler(warmup_steps=warmup_steps, decay_steps=decay_steps)
+lr_scheduler = load_lr_scheduler(
+    total_training_steps=total_training_steps,
+    warmup_steps=warmup_steps,
+    decay_steps=decay_steps,
+)
 scaler = torch.amp.GradScaler()
 metric = BinaryAccuracy()
 
@@ -126,7 +132,7 @@ with profile(
     profile_memory=True,
     with_stack=True,
 ) as prof:
-    for epoch in range(num_epochs):
+    for epoch in tqdm(range(num_epochs), desc="Epochs"):
         metric.reset()
         timed_steps = []
         epoch_loss = 0
