@@ -1,15 +1,24 @@
 import torch
+import torch.nn as nn
 import wandb
 
 
 def freeze_model(model):
-    for param in model.parameters():
-        param.requires_grad = False
-    for param in model.head.fc.parameters():
-        param.requires_grad = True
+    for p in model.parameters():
+        p.requires_grad = False
+
+    linear_layers = [m for m in model.modules() if isinstance(m, nn.Linear)]
+    if not linear_layers:
+        raise ValueError("No Linear layers found in model.")
+
+    last_linear = linear_layers[-1]
+
+    for p in last_linear.parameters():
+        p.requires_grad = True
 
     trainable = [n for n, p in model.named_parameters() if p.requires_grad]
     print("Trainable parameters:", trainable)
+    return model
 
 
 def timed(fn):
@@ -31,7 +40,7 @@ def model_num_params(model):
     return non_embedding_params
 
 
-def initial_write(
+def initialize_writer(
     entity: str,
     project: str,
     global_batch_size: int,
