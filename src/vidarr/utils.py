@@ -17,7 +17,7 @@ def freeze_model(model):
         p.requires_grad = True
 
     trainable = [n for n, p in model.named_parameters() if p.requires_grad]
-    print("Trainable parameters:", trainable)
+    print_rank_0("Trainable parameters:", trainable)
     return model
 
 
@@ -63,3 +63,14 @@ def initialize_writer(
         },
     )
     return writer
+
+def print_rank_0(message, rank=None):
+    """If distributed is initialized or rank is specified, print only on rank 0."""
+    if rank is not None:
+        if rank == 0:
+            print(message, flush=True)
+    elif torch.distributed.is_initialized():
+        if torch.distributed.get_rank() == 0:
+            print(message, flush=True)
+    else:
+        print(message, flush=True)

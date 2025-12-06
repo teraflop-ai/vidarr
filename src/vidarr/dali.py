@@ -2,7 +2,7 @@ import nvidia.dali.fn as fn
 import nvidia.dali.types as types
 from nvidia.dali.pipeline import pipeline_def
 from nvidia.dali.plugin.pytorch import DALIClassificationIterator
-
+from nvidia.dali.auto_aug import auto_augment
 
 def apply_training_augmentations(images, image_size: int, image_crop: int):
     images = fn.decoders.image_random_crop(
@@ -13,13 +13,19 @@ def apply_training_augmentations(images, image_size: int, image_crop: int):
 
     images = images.gpu()
 
+    rng = fn.random.coin_flip(probability=0.5)
+    images = fn.flip(images, horizontal=rng)
+
+    images = auto_augment.auto_augment_image_net(
+        images, shape=[image_size, image_size]
+    )
+
     images = fn.crop_mirror_normalize(
         images,
         dtype=types.FLOAT,
         crop=(image_crop, image_crop),
         mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
         std=[0.229 * 255, 0.224 * 255, 0.225 * 255],
-        mirror=fn.random.coin_flip(),
     )
     return images
 
@@ -41,7 +47,7 @@ def apply_validation_augmentations(images, image_size: int, image_crop: int):
     return images
 
 
-@pipeline_def
+@pipeline_def(enable_conditionals=True)
 def dali_training_pipeline(images_dir: str, image_size: int, image_crop: int):
     images, labels = fn.readers.file(
         file_root=images_dir, random_shuffle=True, pad_last_batch=True, name="Reader"
