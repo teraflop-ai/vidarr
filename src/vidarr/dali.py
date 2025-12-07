@@ -1,8 +1,9 @@
 import nvidia.dali.fn as fn
 import nvidia.dali.types as types
+from nvidia.dali.auto_aug import auto_augment
 from nvidia.dali.pipeline import pipeline_def
 from nvidia.dali.plugin.pytorch import DALIClassificationIterator
-from nvidia.dali.auto_aug import auto_augment
+
 
 def apply_training_augmentations(images, image_size: int, image_crop: int):
     images = fn.decoders.image_random_crop(
@@ -16,9 +17,7 @@ def apply_training_augmentations(images, image_size: int, image_crop: int):
     rng = fn.random.coin_flip(probability=0.5)
     images = fn.flip(images, horizontal=rng)
 
-    images = auto_augment.auto_augment_image_net(
-        images, shape=[image_size, image_size]
-    )
+    images = auto_augment.auto_augment_image_net(images, shape=[image_size, image_size])
 
     images = fn.crop_mirror_normalize(
         images,

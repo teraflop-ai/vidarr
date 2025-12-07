@@ -64,6 +64,7 @@ def initialize_writer(
     )
     return writer
 
+
 def print_rank_0(message, rank=None):
     """If distributed is initialized or rank is specified, print only on rank 0."""
     if rank is not None:
