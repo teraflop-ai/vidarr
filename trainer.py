@@ -118,7 +118,8 @@ def train_step(
         pred = model(inputs)
         loss = criterion(pred, labels)
 
-    metric.update(pred.detach().cpu(), labels.detach().cpu())
+    if metric:
+        metric.update(pred.detach().cpu(), labels.detach().cpu())
 
     if scaler:
         scaler.scale(loss).backward()
@@ -179,7 +180,17 @@ else:
     scaler = None
 
 
-def train_epoch(train_data):
+def train_epoch(
+    model,
+    train_data,
+    optimizer,
+    criterion,
+    lr_scheduler,
+    inputs,
+    labels,
+    scaler,
+    metric,
+):
     model.train()
     metric.reset()
     timed_steps = []
@@ -228,7 +239,9 @@ def val_epoch(val_data):
     for step, batch_data in enumerate(val_data):
         inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
         labels = batch_data[0]["label"].float()
-        loss, times = timed(lambda: val_step(inputs, labels, scaler))
+        loss, times = timed(
+            lambda: val_step(model, criterion, inputs, labels, scaler, metric)
+        )
         prof.step()
         timed_steps.append(times)
         epoch_loss += loss.item()
