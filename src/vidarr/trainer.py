@@ -11,8 +11,8 @@ from torchmetrics.classification import BinaryAccuracy
 from tqdm import tqdm
 from transformers import get_cosine_schedule_with_warmup, get_wsd_schedule
 
-from src.vidarr.dali import dali_train_loader, dali_val_loader
-from src.vidarr.utils import freeze_model, print_rank_0, timed
+from vidarr.dali import dali_train_loader, dali_val_loader
+from vidarr.utils import freeze_model, print_rank_0, timed
 
 torch.set_float32_matmul_precision("high")
 torch.backends.cudnn.benchmark = True
@@ -52,14 +52,21 @@ def load_optimizer(model, lr: float, fused: bool = True):
     return optimizer
 
 
-def load_criterion():
-    criterion = nn.BCEWithLogitsLoss()
+@torch.compile
+def load_criterion(criterion_type: str):
+    if criterion_type == "bcewithlogits":
+        criterion = nn.BCEWithLogitsLoss()
+    else:
+        raise NotImplementedError()
     return criterion
 
 
-def load_metric(device="cuda"):
-    metric = BinaryAccuracy().to(device=device)
-    return metric
+def load_metric(metric_type: str, device="cuda"):
+    if metric_type == "binary":
+        metric = BinaryAccuracy()
+    else:
+        raise NotImplementedError()
+    return metric.to(device=device)
 
 
 def load_lr_scheduler(
@@ -153,7 +160,7 @@ def train_epoch(
     pbar = tqdm(total=len(train_data), desc="Training")
     for step, batch_data in enumerate(train_data):
         torch.compiler.cudagraph_mark_step_begin()
-        inputs = batch_data[0]["data"] # Shape: [B, C, H, W]
+        inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
         labels = batch_data[0]["label"].float()
         loss, times = timed(
             lambda: train_step(
@@ -194,7 +201,7 @@ def val_epoch(model, val_data, criterion, scaler, metric, prof, epoch):
     pbar = tqdm(total=len(val_data), desc="Evaluating")
     for step, batch_data in enumerate(val_data):
         torch.compiler.cudagraph_mark_step_begin()
-        inputs = batch_data[0]["data"] # Shape: [B, C, H, W]
+        inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
         labels = batch_data[0]["label"].float()
         loss, times = timed(
             lambda: val_step(model, criterion, inputs, labels, scaler, metric)
@@ -217,7 +224,7 @@ def val_epoch(model, val_data, criterion, scaler, metric, prof, epoch):
     return epoch_loss / (step + 1)
 
 
-def train(
+def run_training(
     model,
     train_dataloader,
     val_dataloader,
@@ -260,23 +267,25 @@ def train(
                 )
 
 
-if __name__ == "__main__":
-    model_name = "timm/efficientvit_m5.r224_in1k"
-    train_dir = "/home/henry/Documents/image_datasets/jpeg_experiment/train_data"
-    val_dir = "/home/henry/Documents/image_datasets/jpeg_experiment/val_data"
-    num_epochs = 20
-    batch_size = 1024
-    learning_rate = 5.0e-05
-    scheduler_type = "cosine"
-    warmup_steps = 0.10
-    decay_steps = 0.10
-    num_threads = 12
-    image_size = 224
-    image_crop = 224
-    use_scaler = False
-    use_compile = True
-    profiler_dir = "./log/tinyvit"
-
+def train(
+    model_name: str,
+    train_dir: str,
+    val_dir: str,
+    num_epochs: int,
+    batch_size: int,
+    learning_rate: float,
+    scheduler_type: str,
+    warmup_steps: float,
+    decay_steps: Optional[float],
+    num_threads: int,
+    image_size: int,
+    image_crop: int,
+    use_scaler: bool,
+    use_compile: bool,
+    metric_type: str,
+    criterion_type: str,
+    profiler_dir: str,
+):
     train_dataloader = dali_train_loader(
         images_dir=train_dir,
         batch_size=batch_size,
@@ -299,18 +308,19 @@ if __name__ == "__main__":
     model = load_model(
         model_name=model_name,
         drop_path_rate=None,
-    )  # "tiny_vit_21m_224" "timm/vit_tiny_patch16_384.augreg_in21k_ft_in1k"
+    )
     if use_compile:
         model = torch.compile(model)
 
-    metric = load_metric()
+    metric = load_metric(metric_type=metric_type)
     optimizer = load_optimizer(model=model, lr=learning_rate)
-    criterion = load_criterion()
+    criterion = load_criterion(criterion_type=criterion_type)
     lr_scheduler = load_lr_scheduler(
         optimizer=optimizer,
         scheduler_type=scheduler_type,
         total_training_steps=total_training_steps,
         warmup_steps=warmup_steps,
+        decay_steps=decay_steps,
     )
 
     if use_scaler:
@@ -318,7 +328,7 @@ if __name__ == "__main__":
     else:
         scaler = None
 
-    train(
+    run_training(
         model=model,
         train_dataloader=train_dataloader,
         val_dataloader=val_dataloader,
