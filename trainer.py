@@ -123,13 +123,12 @@ def train_step(
 
 
 def val_step(model, criterion, inputs, labels, scaler, metric):
-    with torch.no_grad():
-        with torch.amp.autocast(
-            device_type="cuda",
-            dtype=torch.float16 if scaler is not None else torch.bfloat16,
-        ):
-            pred = model(inputs)
-            loss = criterion(pred, labels)
+    with torch.amp.autocast(
+        device_type="cuda",
+        dtype=torch.float16 if scaler is not None else torch.bfloat16,
+    ):
+        pred = model(inputs)
+        loss = criterion(pred, labels)
 
     if metric:
         metric.update(pred, labels)
@@ -153,7 +152,8 @@ def train_epoch(
     epoch_loss = 0
     pbar = tqdm(total=len(train_data), desc="Training")
     for step, batch_data in enumerate(train_data):
-        inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
+        torch.compiler.cudagraph_mark_step_begin()
+        inputs = batch_data[0]["data"] # Shape: [B, C, H, W]
         labels = batch_data[0]["label"].float()
         loss, times = timed(
             lambda: train_step(
@@ -193,7 +193,8 @@ def val_epoch(model, val_data, criterion, scaler, metric, prof, epoch):
     epoch_loss = 0
     pbar = tqdm(total=len(val_data), desc="Evaluating")
     for step, batch_data in enumerate(val_data):
-        inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
+        torch.compiler.cudagraph_mark_step_begin()
+        inputs = batch_data[0]["data"] # Shape: [B, C, H, W]
         labels = batch_data[0]["label"].float()
         loss, times = timed(
             lambda: val_step(model, criterion, inputs, labels, scaler, metric)
@@ -247,15 +248,16 @@ def train(
                 prof,
                 epoch,
             )
-            val_loss = val_epoch(
-                model,
-                val_dataloader,
-                criterion,
-                scaler,
-                metric,
-                prof,
-                epoch,
-            )
+            with torch.no_grad():
+                val_loss = val_epoch(
+                    model,
+                    val_dataloader,
+                    criterion,
+                    scaler,
+                    metric,
+                    prof,
+                    epoch,
+                )
 
 
 if __name__ == "__main__":
@@ -268,11 +270,11 @@ if __name__ == "__main__":
     scheduler_type = "cosine"
     warmup_steps = 0.10
     decay_steps = 0.10
-    num_threads = 8
+    num_threads = 12
     image_size = 224
     image_crop = 224
     use_scaler = False
-    use_compile = False
+    use_compile = True
     profiler_dir = "./log/tinyvit"
 
     train_dataloader = dali_train_loader(
@@ -299,9 +301,7 @@ if __name__ == "__main__":
         drop_path_rate=None,
     )  # "tiny_vit_21m_224" "timm/vit_tiny_patch16_384.augreg_in21k_ft_in1k"
     if use_compile:
-        model = torch.compile(
-            model, fullgraph=False, backend="inductor", mode="max-autotune"
-        )
+        model = torch.compile(model)
 
     metric = load_metric()
     optimizer = load_optimizer(model=model, lr=learning_rate)

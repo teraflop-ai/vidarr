@@ -90,7 +90,6 @@ def dali_train_loader(
     train_loader = DALIClassificationIterator(
         pipe,
         reader_name="Reader",
-        fill_last_batch=False,
     )
     return train_loader
 
@@ -117,6 +116,5 @@ def dali_val_loader(
     val_loader = DALIClassificationIterator(
         pipe,
         reader_name="Reader",
-        fill_last_batch=False,
     )
     return val_loader
