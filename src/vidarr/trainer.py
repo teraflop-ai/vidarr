@@ -206,7 +206,7 @@ def val_epoch(model, val_data, criterion, scaler, metric, prof, epoch):
         inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
         labels = batch_data[0]["label"].float()
         loss, times = timed(
-            lambda: _step(model, criterion, inputs, labels, scaler, metric, is_train=False)
+            lambda: _step(model, None, criterion, None, inputs, labels, scaler, metric, is_train=False)
         )
         prof.step()
         timed_steps.append(times)
