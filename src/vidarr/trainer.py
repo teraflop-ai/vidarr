@@ -279,6 +279,9 @@ def train(
     num_epochs: int,
     batch_size: int,
     learning_rate: float,
+    num_classes: int = 1,
+    drop_rate: Optional[float] = 0.1,
+    drop_path_rate: Optional[float] = None,
     scheduler_type: str = "cosine",
     warmup_steps: float = 0.10,
     decay_steps: Optional[float] = 0.10,
@@ -287,6 +290,7 @@ def train(
     image_crop: int = 224,
     use_scaler: bool = False,
     use_compile: bool = False,
+    train_classification_head: bool = False,
     metric_type: str = "binary",
     criterion_type: str = "bcewithlogits",
     profiler_dir: str = "./log",
@@ -313,7 +317,10 @@ def train(
 
     model = load_model(
         model_name=model_name,
-        drop_path_rate=None,
+        num_classes=num_classes,
+        drop_path_rate=drop_path_rate,
+        drop_rate=drop_rate,
+        train_classification_head=train_classification_head,
     )
     if use_compile:
         model = torch.compile(model)
