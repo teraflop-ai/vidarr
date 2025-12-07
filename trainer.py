@@ -188,6 +188,7 @@ def train_epoch(
     lr_scheduler,
     scaler,
     metric,
+    prof,
 ):
     model.train()
     metric.reset()
@@ -228,7 +229,7 @@ def train_epoch(
     return epoch_loss / (step + 1)
 
 
-def val_epoch(model, val_data, criterion, scaler, metric):
+def val_epoch(model, val_data, criterion, scaler, metric, prof):
     model.eval()
     metric.reset()
     timed_steps = []
@@ -274,4 +275,5 @@ with profile(
             lr_scheduler,
             scaler,
             metric,
+            prof,
         )
