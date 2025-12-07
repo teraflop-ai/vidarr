@@ -22,7 +22,7 @@ torch.backends.cuda.matmul.allow_tf32 = True
 train_dir = "/home/henry/Documents/image_datasets/jpeg_experiment"
 num_epochs = 30
 batch_size = 1536
-learning_rate = 3.0e-05
+learning_rate = 5.0e-05
 warmup_steps = 0.10
 decay_steps = 0.10
 use_scaler = False
@@ -107,7 +107,9 @@ def load_lr_scheduler(
     return lr_scheduler
 
 
-def train_step(inputs, labels, scaler):
+def train_step(
+    model, optimizer, criterion, lr_scheduler, inputs, labels, scaler, metric
+):
     optimizer.zero_grad(set_to_none=True)
     with torch.amp.autocast(
         device_type="cuda",
@@ -134,7 +136,7 @@ def train_step(inputs, labels, scaler):
     return loss
 
 
-def val_step(inputs, labels, scaler):
+def val_step(model, criterion, inputs, labels, scaler, metric):
     with torch.no_grad():
         with torch.amp.autocast(
             device_type="cuda",
@@ -186,7 +188,18 @@ def train_epoch(train_data):
     for step, batch_data in enumerate(train_data):
         inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
         labels = batch_data[0]["label"].float()
-        loss, times = timed(lambda: train_step(inputs, labels, scaler))
+        loss, times = timed(
+            lambda: train_step(
+                model,
+                optimizer,
+                criterion,
+                lr_scheduler,
+                inputs,
+                labels,
+                scaler,
+                metric,
+            )
+        )
         prof.step()
         timed_steps.append(times)
         epoch_loss += loss.item()
