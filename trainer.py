@@ -19,13 +19,15 @@ torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 
 
-train_dir = "/home/henry/Documents/image_datasets/jpeg_experiment"
+train_dir = "/home/henry/Documents/image_datasets/jpeg_experiment/train_data"
+val_dir = "/home/henry/Documents/image_datasets/jpeg_experiment/val_data"
 num_epochs = 30
 batch_size = 1536
 learning_rate = 5.0e-05
 warmup_steps = 0.10
 decay_steps = 0.10
 use_scaler = False
+profiler_dir = "./log/tinyvit"
 
 
 def load_model(
@@ -146,7 +148,8 @@ def val_step(model, criterion, inputs, labels, scaler, metric):
             pred = model(inputs)
             loss = criterion(pred, labels)
 
-    metric.update(pred.detach().cpu(), labels.detach().cpu())
+    if metric:
+        metric.update(pred.detach().cpu(), labels.detach().cpu())
     return loss
 
 
@@ -158,11 +161,19 @@ train_data = dali_train_loader(
     image_crop=224,
 )
 
+val_data = dali_val_loader(
+    images_dir=val_dir,
+    batch_size=batch_size,
+    num_threads=8,
+    image_size=224,
+    image_crop=224,
+)
+
 steps_per_epoch = math.ceil(train_data._size / batch_size)
 total_training_steps = num_epochs * steps_per_epoch
 
 model = load_model(
-    model_name="timm/efficientvit_m4.r224_in1k", drop_path_rate=None
+    model_name="timm/efficientvit_m5.r224_in1k", drop_path_rate=None, use_compile=True
 )  # "tiny_vit_21m_224" "timm/vit_tiny_patch16_384.augreg_in21k_ft_in1k"
 
 metric = load_metric()
@@ -261,7 +272,7 @@ def val_epoch(model, val_data, criterion, scaler, metric, prof):
 
 with profile(
     schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
-    on_trace_ready=torch.profiler.tensorboard_trace_handler("./log/tinyvit"),
+    on_trace_ready=torch.profiler.tensorboard_trace_handler(dir_name=profiler_dir),
     record_shapes=True,
     profile_memory=True,
     with_stack=True,
@@ -277,3 +288,4 @@ with profile(
             metric,
             prof,
         )
+        val_loss = val_epoch(model, val_data, criterion, scaler, metric, prof)

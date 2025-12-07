@@ -81,15 +81,14 @@ def dali_train_loader(
         "num_threads": num_threads,
         "device_id": device_id,
     }
+    pipe = dali_training_pipeline(
+        images_dir=images_dir,
+        image_size=image_size,
+        image_crop=image_crop,
+        **pipeline_kwargs,
+    )
     train_loader = DALIClassificationIterator(
-        [
-            dali_training_pipeline(
-                images_dir=images_dir,
-                image_size=image_size,
-                image_crop=image_crop,
-                **pipeline_kwargs,
-            )
-        ],
+        pipe,
         reader_name="Reader",
         fill_last_batch=False,
     )
@@ -109,16 +108,15 @@ def dali_val_loader(
         "num_threads": num_threads,
         "device_id": device_id,
     }
-    train_loader = DALIClassificationIterator(
-        [
-            dali_validation_pipeline(
-                images_dir=images_dir,
-                image_size=image_size,
-                image_crop=image_crop,
-                **pipeline_kwargs,
-            )
-        ],
+    pipe = dali_validation_pipeline(
+        images_dir=images_dir,
+        image_size=image_size,
+        image_crop=image_crop,
+        **pipeline_kwargs,
+    )
+    val_loader = DALIClassificationIterator(
+        pipe,
         reader_name="Reader",
         fill_last_batch=False,
     )
-    return train_loader
+    return val_loader
