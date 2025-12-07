@@ -110,10 +110,12 @@ def load_lr_scheduler(
     return lr_scheduler
 
 
-def train_step(
-    model, optimizer, criterion, lr_scheduler, inputs, labels, scaler, metric
+def _step(
+    model, optimizer, criterion, lr_scheduler, inputs, labels, scaler, metric, is_train: bool,
 ):
-    optimizer.zero_grad(set_to_none=True)
+    if is_train:
+        optimizer.zero_grad(set_to_none=True)
+    
     with torch.amp.autocast(
         device_type="cuda",
         dtype=torch.float16 if scaler is not None else torch.bfloat16,
@@ -124,32 +126,20 @@ def train_step(
     if metric:
         metric.update(pred, labels)
 
-    if scaler:
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        old_scaler = scaler.get_scale()
-        scaler.update()
-        new_scaler = scaler.get_scale()
-        if new_scaler >= old_scaler:
+    if is_train:
+        if scaler:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            old_scaler = scaler.get_scale()
+            scaler.update()
+            new_scaler = scaler.get_scale()
+            if new_scaler >= old_scaler:
+                lr_scheduler.step()
+        else:
+            loss.backward()
+            optimizer.step()
             lr_scheduler.step()
-    else:
-        loss.backward()
-        optimizer.step()
-        lr_scheduler.step()
 
-    return loss
-
-
-def val_step(model, criterion, inputs, labels, scaler, metric):
-    with torch.amp.autocast(
-        device_type="cuda",
-        dtype=torch.float16 if scaler is not None else torch.bfloat16,
-    ):
-        pred = model(inputs)
-        loss = criterion(pred, labels)
-
-    if metric:
-        metric.update(pred, labels)
     return loss
 
 
@@ -174,7 +164,7 @@ def train_epoch(
         inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
         labels = batch_data[0]["label"].float()
         loss, times = timed(
-            lambda: train_step(
+            lambda: _step(
                 model,
                 optimizer,
                 criterion,
@@ -183,6 +173,7 @@ def train_epoch(
                 labels,
                 scaler,
                 metric,
+                is_train=True,
             )
         )
         prof.step()
@@ -215,7 +206,7 @@ def val_epoch(model, val_data, criterion, scaler, metric, prof, epoch):
         inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
         labels = batch_data[0]["label"].float()
         loss, times = timed(
-            lambda: val_step(model, criterion, inputs, labels, scaler, metric)
+            lambda: _step(model, criterion, inputs, labels, scaler, metric, is_train=False)
         )
         prof.step()
         timed_steps.append(times)
