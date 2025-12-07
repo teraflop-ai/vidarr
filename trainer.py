@@ -19,25 +19,12 @@ torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 
 
-train_dir = "/home/henry/Documents/image_datasets/jpeg_experiment/train_data"
-val_dir = "/home/henry/Documents/image_datasets/jpeg_experiment/val_data"
-num_epochs = 30
-batch_size = 1536
-learning_rate = 5.0e-05
-warmup_steps = 0.10
-decay_steps = 0.10
-use_scaler = False
-profiler_dir = "./log/tinyvit"
-
-
 def load_model(
     model_name: str,
     num_classes: int = 1,
     drop_rate: float = 0.1,
     drop_path_rate: Optional[float] = 0.05,
     train_classification_head: bool = False,
-    use_compile: bool = True,
-    fullgraph: bool = False,
     device: str = "cuda",
 ):
     device = torch.device(device=device)
@@ -55,11 +42,6 @@ def load_model(
     if train_classification_head:
         model = freeze_model(model=model)
         print_rank_0("=" * 80)
-
-    if use_compile:
-        model = torch.compile(
-            model, fullgraph=fullgraph, backend="inductor", mode="max-autotune"
-        )
     return model
 
 
@@ -81,6 +63,7 @@ def load_metric():
 
 
 def load_lr_scheduler(
+    optimizer,
     scheduler_type: str,
     total_training_steps: int,
     warmup_steps: float,
@@ -153,44 +136,6 @@ def val_step(model, criterion, inputs, labels, scaler, metric):
     return loss
 
 
-train_data = dali_train_loader(
-    images_dir=train_dir,
-    batch_size=batch_size,
-    num_threads=8,
-    image_size=224,
-    image_crop=224,
-)
-
-val_data = dali_val_loader(
-    images_dir=val_dir,
-    batch_size=batch_size,
-    num_threads=8,
-    image_size=224,
-    image_crop=224,
-)
-
-steps_per_epoch = math.ceil(train_data._size / batch_size)
-total_training_steps = num_epochs * steps_per_epoch
-
-model = load_model(
-    model_name="timm/efficientvit_m5.r224_in1k", drop_path_rate=None, use_compile=True
-)  # "tiny_vit_21m_224" "timm/vit_tiny_patch16_384.augreg_in21k_ft_in1k"
-
-metric = load_metric()
-optimizer = load_optimizer(model=model, lr=learning_rate)
-criterion = load_criterion()
-lr_scheduler = load_lr_scheduler(
-    scheduler_type="cosine",
-    total_training_steps=total_training_steps,
-    warmup_steps=warmup_steps,
-)
-
-if use_scaler:
-    scaler = torch.amp.GradScaler()
-else:
-    scaler = None
-
-
 def train_epoch(
     model,
     train_data,
@@ -200,6 +145,7 @@ def train_epoch(
     scaler,
     metric,
     prof,
+    epoch,
 ):
     model.train()
     metric.reset()
@@ -240,7 +186,7 @@ def train_epoch(
     return epoch_loss / (step + 1)
 
 
-def val_epoch(model, val_data, criterion, scaler, metric, prof):
+def val_epoch(model, val_data, criterion, scaler, metric, prof, epoch):
     model.eval()
     metric.reset()
     timed_steps = []
@@ -270,22 +216,117 @@ def val_epoch(model, val_data, criterion, scaler, metric, prof):
     return epoch_loss / (step + 1)
 
 
-with profile(
-    schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
-    on_trace_ready=torch.profiler.tensorboard_trace_handler(dir_name=profiler_dir),
-    record_shapes=True,
-    profile_memory=True,
-    with_stack=True,
-) as prof:
-    for epoch in tqdm(range(num_epochs), desc="Epochs"):
-        train_loss = train_epoch(
-            model,
-            train_data,
-            optimizer,
-            criterion,
-            lr_scheduler,
-            scaler,
-            metric,
-            prof,
+def train(
+    model,
+    train_dataloader,
+    val_dataloader,
+    optimizer,
+    criterion,
+    lr_scheduler,
+    scaler,
+    metric,
+    num_epochs,
+    profiler_dir,
+):
+    with profile(
+        schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler(dir_name=profiler_dir),
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=True,
+    ) as prof:
+        for epoch in tqdm(range(num_epochs), desc="Epochs"):
+            train_loss = train_epoch(
+                model,
+                train_dataloader,
+                optimizer,
+                criterion,
+                lr_scheduler,
+                scaler,
+                metric,
+                prof,
+                epoch,
+            )
+            val_loss = val_epoch(
+                model,
+                val_dataloader,
+                criterion,
+                scaler,
+                metric,
+                prof,
+                epoch,
+            )
+
+
+if __name__ == "__main__":
+    model_name = "timm/efficientvit_m5.r224_in1k"
+    train_dir = "/home/henry/Documents/image_datasets/jpeg_experiment/train_data"
+    val_dir = "/home/henry/Documents/image_datasets/jpeg_experiment/val_data"
+    num_epochs = 20
+    batch_size = 1024
+    learning_rate = 5.0e-05
+    scheduler_type = "cosine"
+    warmup_steps = 0.10
+    decay_steps = 0.10
+    num_threads = 8
+    image_size = 224
+    image_crop = 224
+    use_scaler = False
+    use_compile = False
+    profiler_dir = "./log/tinyvit"
+
+    train_dataloader = dali_train_loader(
+        images_dir=train_dir,
+        batch_size=batch_size,
+        num_threads=num_threads,
+        image_size=image_size,
+        image_crop=image_crop,
+    )
+
+    val_dataloader = dali_val_loader(
+        images_dir=val_dir,
+        batch_size=batch_size,
+        num_threads=num_threads,
+        image_size=image_size,
+        image_crop=image_crop,
+    )
+
+    steps_per_epoch = math.ceil(train_dataloader._size / batch_size)
+    total_training_steps = num_epochs * steps_per_epoch
+
+    model = load_model(
+        model_name=model_name,
+        drop_path_rate=None,
+    )  # "tiny_vit_21m_224" "timm/vit_tiny_patch16_384.augreg_in21k_ft_in1k"
+    if use_compile:
+        model = torch.compile(
+            model, fullgraph=False, backend="inductor", mode="max-autotune"
         )
-        val_loss = val_epoch(model, val_data, criterion, scaler, metric, prof)
+
+    metric = load_metric()
+    optimizer = load_optimizer(model=model, lr=learning_rate)
+    criterion = load_criterion()
+    lr_scheduler = load_lr_scheduler(
+        optimizer=optimizer,
+        scheduler_type=scheduler_type,
+        total_training_steps=total_training_steps,
+        warmup_steps=warmup_steps,
+    )
+
+    if use_scaler:
+        scaler = torch.amp.GradScaler()
+    else:
+        scaler = None
+
+    train(
+        model=model,
+        train_dataloader=train_dataloader,
+        val_dataloader=val_dataloader,
+        optimizer=optimizer,
+        criterion=criterion,
+        lr_scheduler=lr_scheduler,
+        scaler=scaler,
+        metric=metric,
+        num_epochs=num_epochs,
+        profiler_dir=profiler_dir,
+    )
