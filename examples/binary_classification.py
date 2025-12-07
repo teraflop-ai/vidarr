@@ -6,7 +6,7 @@ if __name__ == "__main__":
         model_name="timm/efficientvit_m5.r224_in1k",
         train_dir="/home/henry/Documents/image_datasets/jpeg_experiment/train_data",
         val_dir="/home/henry/Documents/image_datasets/jpeg_experiment/val_data",
-        num_epochs=20,
+        num_epochs=2,
         batch_size=1024,
         learning_rate=5.0e-05,
         scheduler_type="cosine",
@@ -18,5 +18,5 @@ if __name__ == "__main__":
         use_compile=True,
         metric_type="binary",
         criterion_type="bcewithlogits",
-        profiler_dir="./log/tinyvit",
+        profiler_dir="./log/efficientvit",
     )

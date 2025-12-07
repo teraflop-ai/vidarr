@@ -1,4 +1,5 @@
 import math
+import os
 from typing import Optional
 
 import numpy as np
@@ -17,6 +18,16 @@ from vidarr.utils import freeze_model, print_rank_0, timed
 torch.set_float32_matmul_precision("high")
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
+
+
+def save_checkpoint(model, save_dir: str, filename: str = "final_model.pt"):
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir, exist_ok=True)
+
+    save_path = os.path.join(save_dir, filename)
+    state_dict = model.state_dict()
+    print_rank_0(f"Saving final checkpoint to {save_path}...")
+    torch.save(state_dict, save_path)
 
 
 def load_model(
@@ -235,6 +246,7 @@ def run_training(
     metric,
     num_epochs,
     profiler_dir,
+    checkpoint_dir,
 ):
     with profile(
         schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
@@ -266,6 +278,8 @@ def run_training(
                     epoch,
                 )
 
+    save_checkpoint(model=model, save_dir=checkpoint_dir)
+
 
 def train(
     model_name: str,
@@ -274,17 +288,18 @@ def train(
     num_epochs: int,
     batch_size: int,
     learning_rate: float,
-    scheduler_type: str,
-    warmup_steps: float,
-    decay_steps: Optional[float],
-    num_threads: int,
-    image_size: int,
-    image_crop: int,
-    use_scaler: bool,
-    use_compile: bool,
-    metric_type: str,
-    criterion_type: str,
-    profiler_dir: str,
+    scheduler_type: str = "cosine",
+    warmup_steps: float = 0.10,
+    decay_steps: Optional[float] = 0.10,
+    num_threads: int = 4,
+    image_size: int = 224,
+    image_crop: int = 224,
+    use_scaler: bool = False,
+    use_compile: bool = False,
+    metric_type: str = "binary",
+    criterion_type: str = "bcewithlogits",
+    profiler_dir: str = "./log",
+    checkpoint_dir: str = "./checkpoints",
 ):
     train_dataloader = dali_train_loader(
         images_dir=train_dir,
@@ -339,4 +354,5 @@ def train(
         metric=metric,
         num_epochs=num_epochs,
         profiler_dir=profiler_dir,
+        checkpoint_dir=checkpoint_dir,
     )
