@@ -11,7 +11,6 @@ if __name__ == "__main__":
         learning_rate=5.0e-05,
         scheduler_type="cosine",
         warmup_steps=0.10,
-        decay_steps=0.10,
         num_threads=12,
         image_size=224,
         image_crop=224,
