@@ -186,8 +186,6 @@ def train_epoch(
     optimizer,
     criterion,
     lr_scheduler,
-    inputs,
-    labels,
     scaler,
     metric,
 ):
@@ -230,7 +228,7 @@ def train_epoch(
     return epoch_loss / (step + 1)
 
 
-def val_epoch(val_data):
+def val_epoch(model, val_data, criterion, scaler, metric):
     model.eval()
     metric.reset()
     timed_steps = []
@@ -268,4 +266,12 @@ with profile(
     with_stack=True,
 ) as prof:
     for epoch in tqdm(range(num_epochs), desc="Epochs"):
-        train_loss = train_epoch(train_data)
+        train_loss = train_epoch(
+            model,
+            train_data,
+            optimizer,
+            criterion,
+            lr_scheduler,
+            scaler,
+            metric,
+        )
