@@ -57,8 +57,8 @@ def load_criterion():
     return criterion
 
 
-def load_metric():
-    metric = BinaryAccuracy()
+def load_metric(device="cuda"):
+    metric = BinaryAccuracy().to(device=device)
     return metric
 
 
@@ -104,7 +104,7 @@ def train_step(
         loss = criterion(pred, labels)
 
     if metric:
-        metric.update(pred.detach().cpu(), labels.detach().cpu())
+        metric.update(pred, labels)
 
     if scaler:
         scaler.scale(loss).backward()
@@ -132,7 +132,7 @@ def val_step(model, criterion, inputs, labels, scaler, metric):
             loss = criterion(pred, labels)
 
     if metric:
-        metric.update(pred.detach().cpu(), labels.detach().cpu())
+        metric.update(pred, labels)
     return loss
 
 
