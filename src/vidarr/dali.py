@@ -1,11 +1,45 @@
 import nvidia.dali.fn as fn
 import nvidia.dali.types as types
-from nvidia.dali.auto_aug import auto_augment
+from nvidia.dali.auto_aug import auto_augment, rand_augment, trivial_augment
 from nvidia.dali.pipeline import pipeline_def
 from nvidia.dali.plugin.pytorch import DALIClassificationIterator
 
 
-def apply_training_augmentations(images, image_size: int, image_crop: int):
+def random_color_jitter(images, p=0.05):
+    brightness = fn.random.uniform(range=(0.8, 1.2))
+    contrast = fn.random.uniform(range=(0.8, 1.2))
+    saturation = fn.random.uniform(range=(0.8, 1.3))
+    hue = fn.random.uniform(range=(-0.05, 0.05))
+
+    color_jitter = fn.color_twist(
+        images,
+        brightness=brightness,
+        contrast=contrast,
+        saturation=saturation,
+        hue=hue,
+    )
+
+    do = fn.random.coin_flip(probability=p)
+    return do * color_jitter + (1 - do) * images
+
+
+def random_gaussian_blur(images, p=0.05, sigma_range=(0.1, 2.0)):
+    sigma = fn.random.uniform(range=sigma_range)
+    gaussian_blur = fn.gaussian_blur(images, sigma=sigma)
+    do = fn.random.coin_flip(probability=p)
+    images = do * gaussian_blur + (1.0 - do) * images
+    return images
+
+
+def default_augmentations(images):
+    images = random_color_jitter(images)
+    images = random_gaussian_blur(images)
+    return images
+
+
+def apply_training_augmentations(
+    images, image_size: int, image_crop: int, augmentation: str = "trivialaugment"
+):
     images = fn.decoders.image_random_crop(
         images, device="mixed", output_type=types.RGB
     )
@@ -17,7 +51,20 @@ def apply_training_augmentations(images, image_size: int, image_crop: int):
     rng = fn.random.coin_flip(probability=0.5)
     images = fn.flip(images, horizontal=rng)
 
-    images = auto_augment.auto_augment_image_net(images, shape=[image_size, image_size])
+    if augmentation == "autoaugment":
+        images = auto_augment.auto_augment_image_net(
+            images, shape=[image_size, image_size]
+        )
+    elif augmentation == "trivialaugment":
+        images = trivial_augment.trivial_augment_wide(
+            images, shape=[image_size, image_size]
+        )
+    elif augmentation == "randaugment":
+        images = rand_augment.rand_augment(images, shape=[image_size, image_size])
+    elif augmentation == "default":
+        images = default_augmentations(images)
+    else:
+        raise NotImplementedError()
 
     images = fn.crop_mirror_normalize(
         images,
