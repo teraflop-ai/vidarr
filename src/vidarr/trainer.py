@@ -5,9 +5,10 @@ import numpy as np
 import timm
 import torch
 import torch.nn as nn
+from timm.data.mixup import Mixup
 from torch import optim
 from torch.profiler import profile
-from torchmetrics.classification import BinaryAccuracy
+from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy
 from tqdm import tqdm
 from transformers import get_cosine_schedule_with_warmup, get_wsd_schedule
 
@@ -76,14 +77,18 @@ def load_optimizer(
 def load_criterion(criterion_type: str):
     if criterion_type == "bcewithlogits":
         criterion = nn.BCEWithLogitsLoss()
+    elif criterion_type == "crossentropy":
+        criterion = nn.CrossEntropyLoss()
     else:
         raise NotImplementedError()
     return criterion
 
 
-def load_metric(metric_type: str, device="cuda"):
+def load_metric(metric_type: str, num_classes: Optional[int] = None, device="cuda"):
     if metric_type == "binary":
         metric = BinaryAccuracy()
+    elif metric_type == "multiclass":
+        metric = MulticlassAccuracy(num_classes=num_classes)
     else:
         raise NotImplementedError()
     return metric.to(device=device)
@@ -160,6 +165,16 @@ def _step(
     return loss
 
 
+def format_labels(criterion, labels):
+    if isinstance(criterion, nn.CrossEntropyLoss):
+        labels = labels.squeeze().long()
+    elif isinstance(criterion, nn.BCEWithLogitsLoss):
+        labels = labels.float()
+    else:
+        raise ValueError()
+    return labels
+
+
 def _epoch(
     model,
     dataloader,
@@ -170,6 +185,7 @@ def _epoch(
     metric,
     prof,
     epoch,
+    mixup_fn,
     is_train: bool,
 ):
     model.train() if is_train else model.eval()
@@ -182,7 +198,12 @@ def _epoch(
         for step, batch_data in enumerate(dataloader):
             torch.compiler.cudagraph_mark_step_begin()
             inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
-            labels = batch_data[0]["label"].float()
+            labels = batch_data[0]["label"]
+            labels = format_labels(criterion=criterion, labels=labels)
+
+            if mixup_fn and is_train:
+                inputs, labels = mixup_fn(inputs, labels)
+
             loss, times = timed(
                 lambda: _step(
                     model,
@@ -227,6 +248,7 @@ def run_training(
     num_epochs,
     profiler_dir,
     checkpoint_dir,
+    mixup_fn,
 ):
     with profile(
         schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
@@ -246,6 +268,7 @@ def run_training(
                 metric=metric,
                 prof=prof,
                 epoch=epoch,
+                mixup_fn=mixup_fn,
                 is_train=True,
             )
             val_loss = _epoch(
@@ -258,10 +281,35 @@ def run_training(
                 metric=metric,
                 prof=prof,
                 epoch=epoch,
+                mixup_fn=None,
                 is_train=False,
             )
 
     save_checkpoint(model=model, save_dir=checkpoint_dir)
+
+
+def load_mixup(
+    metric_type: str,
+    use_mixup: bool,
+    mixup_alpha: float,
+    cutmix_alpha: float,
+    mixup_prob: float,
+    switch_prob: float,
+    num_classes: int,
+):
+    if metric_type == "crossentropy" and use_mixup:
+        mixup_fn = Mixup(
+            mixup_alpha=mixup_alpha,
+            cutmix_alpha=cutmix_alpha,
+            prob=mixup_prob,
+            switch_prob=switch_prob,
+            mode="batch",
+            label_smoothing=0.1,
+            num_classes=num_classes,
+        )
+    else:
+        mixup_fn = None
+    return mixup_fn
 
 
 def train(
@@ -289,6 +337,11 @@ def train(
     checkpoint_dir: str = "./checkpoints",
     fullgraph: bool = False,
     compile_mode: str = "max-autotune-no-cudagraphs",
+    use_mixup: bool = False,
+    mixup_alpha: float = 0.1,
+    cutmix_alpha: float = 0.1,
+    mixup_prob: float = 1.0,
+    switch_prob: float = 0.5,
 ):
     train_dataloader = dali_train_loader(
         images_dir=train_dir,
@@ -316,7 +369,16 @@ def train(
     if use_compile:
         model = torch.compile(model, fullgraph=fullgraph, mode=compile_mode)
 
-    metric = load_metric(metric_type=metric_type)
+    mixup_fn = load_mixup(
+        metric_type=metric_type,
+        use_mixup=use_mixup,
+        mixup_alpha=mixup_alpha,
+        cutmix_alpha=cutmix_alpha,
+        mixup_prob=mixup_prob,
+        switch_prob=switch_prob,
+        num_classes=num_classes,
+    )
+    metric = load_metric(metric_type=metric_type, num_classes=num_classes)
     optimizer = load_optimizer(model=model, lr=learning_rate)
     criterion = load_criterion(criterion_type=criterion_type)
     lr_scheduler = load_lr_scheduler(
@@ -344,4 +406,5 @@ def train(
         num_epochs=num_epochs,
         profiler_dir=profiler_dir,
         checkpoint_dir=checkpoint_dir,
+        mixup_fn=mixup_fn,
     )
