@@ -56,7 +56,6 @@ def load_model(
     return model
 
 
-@torch.compile
 def load_optimizer(
     model,
     lr: float,
