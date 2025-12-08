@@ -179,36 +179,37 @@ def _epoch(
     epoch_loss = 0
     desc = "Training" if is_train else "Evaluating"
     pbar = tqdm(total=len(dataloader), desc=desc)
-    for step, batch_data in enumerate(dataloader):
-        torch.compiler.cudagraph_mark_step_begin()
-        inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
-        labels = batch_data[0]["label"].float()
-        loss, times = timed(
-            lambda: _step(
-                model,
-                optimizer,
-                criterion,
-                lr_scheduler,
-                inputs,
-                labels,
-                scaler,
-                metric,
-                is_train,
+    with torch.set_grad_enabled(is_train):
+        for step, batch_data in enumerate(dataloader):
+            torch.compiler.cudagraph_mark_step_begin()
+            inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
+            labels = batch_data[0]["label"].float()
+            loss, times = timed(
+                lambda: _step(
+                    model,
+                    optimizer,
+                    criterion,
+                    lr_scheduler,
+                    inputs,
+                    labels,
+                    scaler,
+                    metric,
+                    is_train,
+                )
             )
-        )
-        prof.step()
-        timed_steps.append(times)
-        epoch_loss += loss.item()
-        stats = {
-            "epoch": (epoch + 1),
-            "accuracy": metric.compute().item(),
-            "avg_loss": epoch_loss / (step + 1),
-            "median step time": np.median(timed_steps),
-        }
-        if is_train:
-            stats["lr"] = lr_scheduler.get_last_lr()[0]
-        pbar.set_postfix(stats)
-        pbar.update()
+            prof.step()
+            timed_steps.append(times)
+            epoch_loss += loss.item()
+            stats = {
+                "epoch": (epoch + 1),
+                "accuracy": metric.compute().item(),
+                "avg_loss": epoch_loss / (step + 1),
+                "median step time": np.median(timed_steps),
+            }
+            if is_train:
+                stats["lr"] = lr_scheduler.get_last_lr()[0]
+            pbar.set_postfix(stats)
+            pbar.update()
 
     dataloader.reset()
     pbar.close()
@@ -248,19 +249,18 @@ def run_training(
                 epoch=epoch,
                 is_train=True,
             )
-            with torch.no_grad():
-                val_loss = _epoch(
-                    model=model,
-                    dataloader=val_dataloader,
-                    optimizer=None,
-                    criterion=criterion,
-                    lr_scheduler=None,
-                    scaler=scaler,
-                    metric=metric,
-                    prof=prof,
-                    epoch=epoch,
-                    is_train=False,
-                )
+            val_loss = _epoch(
+                model=model,
+                dataloader=val_dataloader,
+                optimizer=None,
+                criterion=criterion,
+                lr_scheduler=None,
+                scaler=scaler,
+                metric=metric,
+                prof=prof,
+                epoch=epoch,
+                is_train=False,
+            )
 
     save_checkpoint(model=model, save_dir=checkpoint_dir)
 
