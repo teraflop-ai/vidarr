@@ -1,4 +1,3 @@
-import math
 import os
 from typing import Optional
 
@@ -288,6 +287,8 @@ def train(
     criterion_type: str = "bcewithlogits",
     profiler_dir: str = "./log",
     checkpoint_dir: str = "./checkpoints",
+    fullgraph: bool = False,
+    compile_mode: str = "max-autotune-no-cudagraphs",
 ):
     train_dataloader = dali_train_loader(
         images_dir=train_dir,
@@ -313,7 +314,7 @@ def train(
         train_classification_head=train_classification_head,
     )
     if use_compile:
-        model = torch.compile(model)
+        model = torch.compile(model, fullgraph=fullgraph, mode=compile_mode)
 
     metric = load_metric(metric_type=metric_type)
     optimizer = load_optimizer(model=model, lr=learning_rate)
