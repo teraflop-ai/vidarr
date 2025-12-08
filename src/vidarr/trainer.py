@@ -111,11 +111,19 @@ def load_lr_scheduler(
 
 
 def _step(
-    model, optimizer, criterion, lr_scheduler, inputs, labels, scaler, metric, is_train: bool,
+    model,
+    optimizer,
+    criterion,
+    lr_scheduler,
+    inputs,
+    labels,
+    scaler,
+    metric,
+    is_train: bool,
 ):
     if is_train:
         optimizer.zero_grad(set_to_none=True)
-    
+
     with torch.amp.autocast(
         device_type="cuda",
         dtype=torch.float16 if scaler is not None else torch.bfloat16,
@@ -143,9 +151,9 @@ def _step(
     return loss
 
 
-def train_epoch(
+def _epoch(
     model,
-    train_data,
+    dataloader,
     optimizer,
     criterion,
     lr_scheduler,
@@ -153,13 +161,15 @@ def train_epoch(
     metric,
     prof,
     epoch,
+    is_train: bool,
 ):
-    model.train()
+    model.train() if is_train else model.eval()
     metric.reset()
     timed_steps = []
     epoch_loss = 0
-    pbar = tqdm(total=len(train_data), desc="Training")
-    for step, batch_data in enumerate(train_data):
+    desc = "Training" if is_train else "Evaluating"
+    pbar = tqdm(total=len(dataloader), desc=desc)
+    for step, batch_data in enumerate(dataloader):
         torch.compiler.cudagraph_mark_step_begin()
         inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
         labels = batch_data[0]["label"].float()
@@ -173,55 +183,24 @@ def train_epoch(
                 labels,
                 scaler,
                 metric,
-                is_train=True,
+                is_train,
             )
         )
         prof.step()
         timed_steps.append(times)
         epoch_loss += loss.item()
-        pbar.set_postfix(
-            {
-                "epoch": (epoch + 1),
-                "accuracy": metric.compute().item(),
-                "avg_loss": epoch_loss / (step + 1),
-                "lr": lr_scheduler.get_last_lr()[0],
-                "median step time": np.median(timed_steps),
-            }
-        )
-
+        stats = {
+            "epoch": (epoch + 1),
+            "accuracy": metric.compute().item(),
+            "avg_loss": epoch_loss / (step + 1),
+            "median step time": np.median(timed_steps),
+        }
+        if is_train:
+            stats["lr"] = lr_scheduler.get_last_lr()[0]
+        pbar.set_postfix(stats)
         pbar.update()
-    train_data.reset()
-    pbar.close()
-    return epoch_loss / (step + 1)
 
-
-def val_epoch(model, val_data, criterion, scaler, metric, prof, epoch):
-    model.eval()
-    metric.reset()
-    timed_steps = []
-    epoch_loss = 0
-    pbar = tqdm(total=len(val_data), desc="Evaluating")
-    for step, batch_data in enumerate(val_data):
-        torch.compiler.cudagraph_mark_step_begin()
-        inputs = batch_data[0]["data"]  # Shape: [B, C, H, W]
-        labels = batch_data[0]["label"].float()
-        loss, times = timed(
-            lambda: _step(model, None, criterion, None, inputs, labels, scaler, metric, is_train=False)
-        )
-        prof.step()
-        timed_steps.append(times)
-        epoch_loss += loss.item()
-        pbar.set_postfix(
-            {
-                "epoch": (epoch + 1),
-                "accuracy": metric.compute().item(),
-                "avg_loss": epoch_loss / (step + 1),
-                "median step time": np.median(timed_steps),
-            }
-        )
-
-        pbar.update()
-    val_data.reset()
+    dataloader.reset()
     pbar.close()
     return epoch_loss / (step + 1)
 
@@ -247,26 +226,30 @@ def run_training(
         with_stack=True,
     ) as prof:
         for epoch in tqdm(range(num_epochs), desc="Epochs"):
-            train_loss = train_epoch(
-                model,
-                train_dataloader,
-                optimizer,
-                criterion,
-                lr_scheduler,
-                scaler,
-                metric,
-                prof,
-                epoch,
+            train_loss = _epoch(
+                model=model,
+                dataloader=train_dataloader,
+                optimizer=optimizer,
+                criterion=criterion,
+                lr_scheduler=lr_scheduler,
+                scaler=scaler,
+                metric=metric,
+                prof=prof,
+                epoch=epoch,
+                is_train=True,
             )
             with torch.no_grad():
-                val_loss = val_epoch(
-                    model,
-                    val_dataloader,
-                    criterion,
-                    scaler,
-                    metric,
-                    prof,
-                    epoch,
+                val_loss = _epoch(
+                    model=model,
+                    dataloader=val_dataloader,
+                    optimizer=None,
+                    criterion=criterion,
+                    lr_scheduler=None,
+                    scaler=scaler,
+                    metric=metric,
+                    prof=prof,
+                    epoch=epoch,
+                    is_train=False,
                 )
 
     save_checkpoint(model=model, save_dir=checkpoint_dir)
