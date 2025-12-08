@@ -56,9 +56,20 @@ def load_model(
     return model
 
 
-def load_optimizer(model, lr: float, fused: bool = True):
+@torch.compile
+def load_optimizer(
+    model,
+    lr: float,
+    fused: bool = True,
+    foreach: Optional[bool] = None,
+    capturable: bool = False,
+):
     optimizer = optim.AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()), lr=lr, fused=fused
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=lr,
+        fused=fused,
+        foreach=foreach,
+        capturable=capturable,
     )
     return optimizer
 
@@ -295,9 +306,6 @@ def train(
         image_crop=image_crop,
     )
 
-    steps_per_epoch = math.ceil(train_dataloader._size / batch_size)
-    total_training_steps = num_epochs * steps_per_epoch
-
     model = load_model(
         model_name=model_name,
         num_classes=num_classes,
@@ -314,7 +322,7 @@ def train(
     lr_scheduler = load_lr_scheduler(
         optimizer=optimizer,
         scheduler_type=scheduler_type,
-        total_training_steps=total_training_steps,
+        total_training_steps=num_epochs * len(train_dataloader),
         warmup_steps=warmup_steps,
         decay_steps=decay_steps,
     )
