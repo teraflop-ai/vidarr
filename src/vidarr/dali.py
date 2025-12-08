@@ -38,7 +38,7 @@ def default_augmentations(images):
 
 
 def apply_training_augmentations(
-    images, image_size: int, image_crop: int, augmentation: str = "trivialaugment"
+    images, image_size: int, image_crop: int, augmentation: str = "default"
 ):
     images = fn.decoders.image_random_crop(
         images, device="mixed", output_type=types.RGB
@@ -94,12 +94,17 @@ def apply_validation_augmentations(images, image_size: int, image_crop: int):
 
 
 @pipeline_def(enable_conditionals=True)
-def dali_training_pipeline(images_dir: str, image_size: int, image_crop: int):
+def dali_training_pipeline(
+    images_dir: str, image_size: int, image_crop: int, augmentation: str
+):
     images, labels = fn.readers.file(
         file_root=images_dir, random_shuffle=True, pad_last_batch=True, name="Reader"
     )
     images = apply_training_augmentations(
-        images=images, image_size=image_size, image_crop=image_crop
+        images=images,
+        image_size=image_size,
+        image_crop=image_crop,
+        augmentation=augmentation,
     )
     return images, labels.gpu()
 
@@ -122,6 +127,7 @@ def dali_train_loader(
     device_id: int = 0,
     image_size: int = 224,
     image_crop: int = 224,
+    augmentation: str = "default",
 ):
     pipeline_kwargs = {
         "batch_size": batch_size,
@@ -132,6 +138,7 @@ def dali_train_loader(
         images_dir=images_dir,
         image_size=image_size,
         image_crop=image_crop,
+        augmentation=augmentation,
         **pipeline_kwargs,
     )
     train_loader = DALIClassificationIterator(

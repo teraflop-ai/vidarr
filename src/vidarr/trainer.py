@@ -342,6 +342,7 @@ def train(
     cutmix_alpha: float = 0.1,
     mixup_prob: float = 1.0,
     switch_prob: float = 0.5,
+    augmentation: str = "default",
 ):
     train_dataloader = dali_train_loader(
         images_dir=train_dir,
@@ -349,6 +350,7 @@ def train(
         num_threads=num_threads,
         image_size=image_size,
         image_crop=image_crop,
+        augmentation=augmentation,
     )
 
     val_dataloader = dali_val_loader(
