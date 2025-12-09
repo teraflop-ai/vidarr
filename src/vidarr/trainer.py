@@ -328,6 +328,10 @@ def train(
     mixup_prob: float = 1.0,
     switch_prob: float = 0.5,
     augmentation: str = "default",
+    push_to_hf: bool = False,
+    repo_id: str = "my-model",
+    token: Optional[str] = None,
+    private: bool = False,
 ):
     train_dataloader = dali_train_loader(
         images_dir=train_dir,
@@ -399,3 +403,8 @@ def train(
     )
 
     save_checkpoint(model=model, save_dir=checkpoint_dir)
+
+    if push_to_hf:
+        timm.models.push_to_hf_hub(
+            model=model, repo_id=repo_id, token=token, private=private
+        )
