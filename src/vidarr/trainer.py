@@ -14,20 +14,11 @@ from transformers import get_cosine_schedule_with_warmup, get_wsd_schedule
 
 from vidarr.dali import dali_train_loader, dali_val_loader
 from vidarr.utils import freeze_model, print_rank_0, timed
+from vidarr.checkpointing import save_checkpoint
 
 torch.set_float32_matmul_precision("high")
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
-
-
-def save_checkpoint(model, save_dir: str, filename: str = "final_model.pt"):
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir, exist_ok=True)
-
-    save_path = os.path.join(save_dir, filename)
-    state_dict = model.state_dict()
-    print_rank_0(f"Saving final checkpoint to {save_path}...")
-    torch.save(state_dict, save_path)
 
 
 def load_model(
@@ -46,13 +37,9 @@ def load_model(
         drop_rate=drop_rate,
         drop_path_rate=drop_path_rate,
     ).to(device)
-    print_rank_0("=" * 80)
-    print_rank_0(model)
-    print_rank_0("=" * 80)
 
     if train_classification_head:
         model = freeze_model(model=model)
-        print_rank_0("=" * 80)
     return model
 
 
@@ -85,6 +72,7 @@ def load_criterion(criterion_type: str):
 
 
 def load_metric(metric_type: str, num_classes: Optional[int] = None, device="cuda"):
+    device = torch.device(device=device)
     if metric_type == "binary":
         metric = BinaryAccuracy()
     elif metric_type == "multiclass":

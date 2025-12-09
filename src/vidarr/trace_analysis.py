@@ -14,5 +14,9 @@ def analyze_run(
         return analyzer.get_temporal_breakdown()
     elif breakdown == "idle":
         return analyzer.get_idle_time_breakdown()
+    elif breakdown == "communication_overlap":
+        return analyzer.get_comm_comp_overlap()
+    elif breakdown == "kernel_launch_stats":
+        return analyzer.get_cuda_kernel_launch_stats()
     else:
         raise NotImplementedError()
