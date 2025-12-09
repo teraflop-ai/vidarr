@@ -1,9 +1,12 @@
-import torch
 import os
-from vidarr.utils import print_rank_0
+
+import torch
+from torch.distributed.checkpoint.format_utils import dcp_to_torch_save
 from torch.distributed.checkpoint.state_dict import get_state_dict, set_state_dict
 from torch.distributed.checkpoint.stateful import Stateful
-from torch.distributed.checkpoint.format_utils import dcp_to_torch_save
+
+from vidarr.utils import print_rank_0
+
 
 class Checkpoint(Stateful):
     def __init__(
@@ -30,6 +33,7 @@ class Checkpoint(Stateful):
             model_state_dict=state_dict["model"],
             optim_state_dict=state_dict["optim"],
         )
+
 
 def save_checkpoint(model, save_dir: str, filename: str = "final_model.pt"):
     if not os.path.exists(save_dir):

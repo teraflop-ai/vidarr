@@ -5,6 +5,11 @@ from nvidia.dali.pipeline import pipeline_def
 from nvidia.dali.plugin.pytorch import DALIClassificationIterator
 
 
+def random_erase(images):
+    images = fn.erase(images)
+    return images
+
+
 def random_color_jitter(images, p=0.05):
     brightness = fn.random.uniform(range=(0.8, 1.2))
     contrast = fn.random.uniform(range=(0.8, 1.2))
@@ -34,6 +39,7 @@ def random_gaussian_blur(images, p=0.05, sigma_range=(0.1, 2.0)):
 def default_augmentations(images):
     images = random_color_jitter(images)
     images = random_gaussian_blur(images)
+    images = random_erase(images)
     return images
 
 

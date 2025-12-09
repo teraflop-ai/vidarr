@@ -12,9 +12,9 @@ from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy
 from tqdm import tqdm
 from transformers import get_cosine_schedule_with_warmup, get_wsd_schedule
 
+from vidarr.checkpointing import save_checkpoint
 from vidarr.dali import dali_train_loader, dali_val_loader
 from vidarr.utils import freeze_model, print_rank_0, timed
-from vidarr.checkpointing import save_checkpoint
 
 torch.set_float32_matmul_precision("high")
 torch.backends.cudnn.benchmark = True
@@ -273,8 +273,6 @@ def run_training(
                 is_train=False,
             )
 
-    save_checkpoint(model=model, save_dir=checkpoint_dir)
-
 
 def load_mixup(
     metric_type: str,
@@ -357,7 +355,9 @@ def train(
         train_classification_head=train_classification_head,
     )
     if use_compile:
-        model = torch.compile(model, fullgraph=fullgraph, mode=compile_mode)
+        model_train = torch.compile(model, fullgraph=fullgraph, mode=compile_mode)
+    else:
+        model_train = model
 
     mixup_fn = load_mixup(
         metric_type=metric_type,
@@ -385,7 +385,7 @@ def train(
         scaler = None
 
     run_training(
-        model=model,
+        model=model_train,
         train_dataloader=train_dataloader,
         val_dataloader=val_dataloader,
         optimizer=optimizer,
@@ -398,3 +398,5 @@ def train(
         checkpoint_dir=checkpoint_dir,
         mixup_fn=mixup_fn,
     )
+
+    save_checkpoint(model=model, save_dir=checkpoint_dir)
