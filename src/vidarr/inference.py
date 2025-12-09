@@ -1,7 +1,7 @@
 import timm
 import torch
-import tqdm
 from torchmetrics import Accuracy
+from tqdm import tqdm
 
 from vidarr.dali import dali_val_loader
 
@@ -10,12 +10,12 @@ def load_model(model_name: str, checkpoint_path: str, num_classes: int, device: 
     model = timm.create_model(model_name, num_classes=num_classes)
     state = torch.load(checkpoint_path, weights_only=True, map_location=device)
     model.load_state_dict(state)
-    model.to(device="cuda")
+    model.to(device)
     model.eval()
     return model
 
 
-def load_metric(metric_type: str, num_classes: int, device: str = "cuda"):
+def load_metric(metric_type: str, num_classes: int, device: str):
     metric = Accuracy(task=metric_type, num_classes=num_classes).to(device)
     return metric
 
@@ -33,7 +33,9 @@ def test(
     use_compile: bool = False,
     device: str = "cuda",
 ):
-    test_loader = dali_val_loader(
+    device = torch.device(device=device)
+
+    dataloader = dali_val_loader(
         images_dir=test_dir,
         batch_size=batch_size,
         num_threads=num_threads,
@@ -54,15 +56,18 @@ def test(
     if use_compile:
         model = torch.compile(model=model)
 
+    pbar = tqdm(total=len(dataloader), desc="Testing")
     with torch.inference_mode():
-        for batch_data in test_loader:
+        for batch_data in dataloader:
             inputs = batch_data[0]["data"]
             labels = batch_data[0]["label"].squeeze().long()
             logits = model(inputs)
             pred_scores = torch.argmax(logits, dim=1)
             metric.update(pred_scores, labels)
+            pbar.update()
 
     accuracy = metric.compute().item()
-    test_loader.reset()
+    dataloader.reset()
+    pbar.close()
     print(f"Test Accuracy: {accuracy:.4f}")
     return accuracy
