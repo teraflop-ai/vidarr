@@ -50,7 +50,7 @@ def apply_training_augmentations(
         images, device="mixed", output_type=types.RGB
     )
 
-    images = fn.resize(images, size=image_size)
+    images = fn.resize(images, size=image_size, interp_type=types.INTERP_CUBIC)
 
     images = images.gpu()
 
@@ -85,7 +85,7 @@ def apply_training_augmentations(
 def apply_validation_augmentations(images, image_size: int, image_crop: int):
     images = fn.decoders.image(images, device="mixed", output_type=types.RGB)
 
-    images = fn.resize(images, size=image_size)
+    images = fn.resize(images, size=image_size, interp_type=types.INTERP_CUBIC)
 
     images = images.gpu()
 

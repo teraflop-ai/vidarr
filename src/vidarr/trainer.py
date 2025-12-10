@@ -1,3 +1,4 @@
+import random
 from typing import Optional
 
 import numpy as np
@@ -5,6 +6,7 @@ import timm
 import torch
 import torch.nn as nn
 from timm.data.mixup import Mixup
+from timm.data.random_erasing import RandomErasing
 from torch import optim
 from torch.profiler import profile
 from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy
@@ -18,6 +20,12 @@ from vidarr.utils import freeze_model, print_rank_0, timed
 torch.set_float32_matmul_precision("high")
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
+
+seed = 42
+torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
+torch.cuda.manual_seed_all(seed)
 
 
 def load_model(
@@ -173,6 +181,7 @@ def _epoch(
     prof,
     epoch,
     mixup_fn,
+    random_erase_fn,
     is_train: bool,
 ):
     model.train() if is_train else model.eval()
@@ -188,8 +197,11 @@ def _epoch(
             labels = batch_data[0]["label"]
             labels = format_labels(criterion=criterion, labels=labels)
 
-            if mixup_fn and is_train:
+            if mixup_fn is not None and is_train:
                 inputs, labels = mixup_fn(inputs, labels)
+
+            if random_erase_fn is not None and is_train:
+                inputs = random_erase_fn(inputs)
 
             loss, times = timed(
                 lambda: _step(
@@ -236,6 +248,7 @@ def run_training(
     profiler_dir,
     checkpoint_dir,
     mixup_fn,
+    random_erase_fn,
 ):
     with profile(
         schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
@@ -256,6 +269,7 @@ def run_training(
                 prof=prof,
                 epoch=epoch,
                 mixup_fn=mixup_fn,
+                random_erase_fn=random_erase_fn,
                 is_train=True,
             )
             val_loss = _epoch(
@@ -269,6 +283,7 @@ def run_training(
                 prof=prof,
                 epoch=epoch,
                 mixup_fn=None,
+                random_erase_fn=None,
                 is_train=False,
             )
 
@@ -327,6 +342,7 @@ def train(
     cutmix_alpha: float = 0.1,
     mixup_prob: float = 1.0,
     switch_prob: float = 0.5,
+    use_re: bool = False,
     augmentation: str = "default",
     push_to_hf: bool = False,
     repo_id: str = "my-model",
@@ -371,6 +387,12 @@ def train(
         switch_prob=switch_prob,
         num_classes=num_classes,
     )
+
+    if use_re:
+        random_erase_fn = RandomErasing(probability=0.5, mode="pixel")
+    else:
+        random_erase_fn = None
+
     metric = load_metric(metric_type=metric_type, num_classes=num_classes)
     optimizer = load_optimizer(model=model, lr=learning_rate)
     criterion = load_criterion(criterion_type=criterion_type)
@@ -400,6 +422,7 @@ def train(
         profiler_dir=profiler_dir,
         checkpoint_dir=checkpoint_dir,
         mixup_fn=mixup_fn,
+        random_erase_fn=random_erase_fn,
     )
 
     save_checkpoint(model=model, save_dir=checkpoint_dir)

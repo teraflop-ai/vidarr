@@ -1,9 +1,22 @@
+import random
+
+import numpy as np
 import timm
 import torch
 from torchmetrics import Accuracy
 from tqdm import tqdm
 
 from vidarr.dali import dali_val_loader
+
+seed = 42
+torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
+torch.cuda.manual_seed_all(seed)
+
+torch.set_float32_matmul_precision("high")
+torch.backends.cudnn.benchmark = True
+torch.backends.cuda.matmul.allow_tf32 = True
 
 
 def load_model(model_name: str, checkpoint_path: str, num_classes: int, device: str):
@@ -30,6 +43,7 @@ def test(
     num_threads: int = 4,
     image_size: int = 224,
     crop_size: int = 224,
+    use_scaler: bool = False,
     use_compile: bool = False,
     device: str = "cuda",
 ):
@@ -61,12 +75,17 @@ def test(
         for batch_data in dataloader:
             inputs = batch_data[0]["data"]
             labels = batch_data[0]["label"].squeeze().long()
-            logits = model(inputs)
+            with torch.amp.autocast(
+                device_type="cuda",
+                dtype=torch.float16 if use_scaler else torch.bfloat16,
+            ):
+                logits = model(inputs)
             pred_scores = torch.argmax(logits, dim=1)
             metric.update(pred_scores, labels)
             pbar.update()
 
     accuracy = metric.compute().item() * 100
+    metric.reset()
     dataloader.reset()
     pbar.close()
     print(f"Test Accuracy: {accuracy:.4f}%")

@@ -83,6 +83,7 @@ def print_rank_0(message, rank=None):
 def upload_to_hf(
     model,
     model_cfg,
+    model_card,
     repo_id: str = "my-model",
     token: Optional[str] = None,
     private: bool = False,
@@ -93,4 +94,5 @@ def upload_to_hf(
         token=token,
         private=private,
         model_config=model_cfg,
+        model_card=model_card,
     )

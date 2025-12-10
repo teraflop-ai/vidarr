@@ -7,8 +7,9 @@ if __name__ == "__main__":
         test_dir="/home/henry/Documents/image_datasets/jpeg_experiment/test_data",
         num_classes=2,
         batch_size=512,
-        image_size=384,
-        crop_size=384,
+        image_size=288,
+        crop_size=288,
         num_threads=12,
-        use_compile=True,
+        use_compile=False,
+        use_scaler=False,
     )

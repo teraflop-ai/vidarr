@@ -40,5 +40,17 @@ model_cfg = {
     "model_type": "image-classification",
 }
 
+model_card = {
+    "tags": ["image-classification", "timm", "transformers"],
+    "pipeline_tag": "image-classification",
+    "library_name": "timm",
+    "license": "other",
+}
 
-upload_to_hf(model=model, model_cfg=model_cfg, repo_id=repo_id, private=False)
+upload_to_hf(
+    model=model,
+    model_cfg=model_cfg,
+    repo_id=repo_id,
+    model_card=model_card,
+    private=False,
+)
