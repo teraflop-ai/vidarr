@@ -66,8 +66,8 @@ def test(
             metric.update(pred_scores, labels)
             pbar.update()
 
-    accuracy = metric.compute().item()
+    accuracy = metric.compute().item() * 100
     dataloader.reset()
     pbar.close()
-    print(f"Test Accuracy: {accuracy:.4f}")
+    print(f"Test Accuracy: {accuracy:.4f}%")
     return accuracy

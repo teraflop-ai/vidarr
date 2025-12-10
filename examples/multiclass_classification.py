@@ -20,6 +20,7 @@ if __name__ == "__main__":
         metric_type="multiclass",
         criterion_type="crossentropy",
         profiler_dir="./log/efficientvit",
+        checkpoint_dir="./checkpoint",
         use_mixup=True,
         augmentation="trivialaugment",
     )

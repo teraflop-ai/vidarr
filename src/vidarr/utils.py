@@ -1,3 +1,6 @@
+from typing import Optional
+
+import timm
 import torch
 import torch.nn as nn
 import wandb
@@ -40,7 +43,7 @@ def model_num_params(model):
     return non_embedding_params
 
 
-def initialize_writer(
+def initialize_wanb(
     entity: str,
     project: str,
     global_batch_size: int,
@@ -75,3 +78,19 @@ def print_rank_0(message, rank=None):
             print(message, flush=True)
     else:
         print(message, flush=True)
+
+
+def upload_to_hf(
+    model,
+    model_cfg,
+    repo_id: str = "my-model",
+    token: Optional[str] = None,
+    private: bool = False,
+):
+    timm.models.push_to_hf_hub(
+        model=model,
+        repo_id=repo_id,
+        token=token,
+        private=private,
+        model_config=model_cfg,
+    )
