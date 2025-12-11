@@ -11,7 +11,8 @@ img = Image.open(
 )
 
 model = timm.create_model(
-    "hf_hub:TeraflopAI/compression-detection-288", pretrained=True,
+    "hf_hub:TeraflopAI/compression-detection-288",
+    pretrained=True,
 )
 model.eval()
 

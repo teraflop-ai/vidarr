@@ -20,9 +20,9 @@ torch.backends.cuda.matmul.allow_tf32 = True
 
 
 def load_model(model_name: str, checkpoint_path: str, num_classes: int, device: str):
-    model = timm.create_model(model_name, num_classes=num_classes)
-    state = torch.load(checkpoint_path, weights_only=True, map_location=device)
-    model.load_state_dict(state)
+    model = timm.create_model(
+        model_name, num_classes=num_classes, checkpoint_path=checkpoint_path
+    )
     model.to(device)
     model.eval()
     return model
@@ -41,25 +41,11 @@ def test(
     num_classes: int = 2,
     batch_size: int = 32,
     num_threads: int = 4,
-    image_size: int = 224,
-    crop_size: int = 224,
     use_scaler: bool = False,
     use_compile: bool = False,
     device: str = "cuda",
 ):
     device = torch.device(device=device)
-
-    dataloader = dali_val_loader(
-        images_dir=test_dir,
-        batch_size=batch_size,
-        num_threads=num_threads,
-        image_size=image_size,
-        image_crop=crop_size,
-    )
-
-    metric = load_metric(
-        metric_type=metric_type, num_classes=num_classes, device=device
-    )
 
     model = load_model(
         model_name=model_name,
@@ -67,8 +53,21 @@ def test(
         num_classes=num_classes,
         device=device,
     )
+    data_config = timm.data.resolve_model_data_config(model)
+
     if use_compile:
         model = torch.compile(model=model)
+
+    dataloader = dali_val_loader(
+        images_dir=test_dir,
+        batch_size=batch_size,
+        num_threads=num_threads,
+        data_config=data_config,
+    )
+
+    metric = load_metric(
+        metric_type=metric_type, num_classes=num_classes, device=device
+    )
 
     pbar = tqdm(total=len(dataloader), desc="Testing")
     with torch.inference_mode():

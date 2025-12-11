@@ -45,15 +45,22 @@ def default_augmentations(images):
 
 def apply_training_augmentations(
     images,
-    image_size: int,
-    image_crop: int,
     augmentation: str,
+    data_config: dict,
 ):
     images = fn.decoders.image_random_crop(
         images, device="mixed", output_type=types.RGB
     )
 
-    images = fn.resize(images, size=image_size, interp_type=types.INTERP_CUBIC)
+    interpolation = {
+        "bicubic": types.INTERP_CUBIC,
+        "bilinear": types.INTERP_LINEAR,
+    }[data_config["interpolation"]]
+
+    image_size = data_config["input_size"][1]
+    resize_short = int(image_size / data_config["crop_pct"])
+
+    images = fn.resize(images, resize_shorter=resize_short, interp_type=interpolation)
 
     images = images.gpu()
 
@@ -78,53 +85,69 @@ def apply_training_augmentations(
     images = fn.crop_mirror_normalize(
         images,
         dtype=types.FLOAT,
-        crop=(image_crop, image_crop),
-        mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
-        std=[0.229 * 255, 0.224 * 255, 0.225 * 255],
+        crop=(image_size, image_size),
+        mean=[m * 255 for m in data_config["mean"]],
+        std=[s * 255 for s in data_config["std"]],
     )
     return images
 
 
-def apply_validation_augmentations(images, image_size: int, image_crop: int):
+def apply_validation_augmentations(
+    images,
+    data_config: dict,
+):
     images = fn.decoders.image(images, device="mixed", output_type=types.RGB)
 
-    images = fn.resize(images, size=image_size, interp_type=types.INTERP_CUBIC)
+    interpolation = {
+        "bicubic": types.INTERP_CUBIC,
+        "bilinear": types.INTERP_LINEAR,
+    }[data_config["interpolation"]]
+
+    image_size = data_config["input_size"][1]
+    resize_short = int(image_size / data_config["crop_pct"])
+
+    images = fn.resize(images, resize_shorter=resize_short, interp_type=interpolation)
 
     images = images.gpu()
 
     images = fn.crop_mirror_normalize(
         images,
         dtype=types.FLOAT,
-        crop=(image_crop, image_crop),
-        mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
-        std=[0.229 * 255, 0.224 * 255, 0.225 * 255],
+        crop=(image_size, image_size),
+        mean=[m * 255 for m in data_config["mean"]],
+        std=[s * 255 for s in data_config["std"]],
     )
     return images
 
 
 @pipeline_def(enable_conditionals=True)
 def dali_training_pipeline(
-    images_dir: str, image_size: int, image_crop: int, augmentation: str
+    images_dir: str,
+    augmentation: str,
+    data_config: dict,
 ):
     images, labels = fn.readers.file(
         file_root=images_dir, random_shuffle=True, pad_last_batch=True, name="Reader"
     )
     images = apply_training_augmentations(
         images=images,
-        image_size=image_size,
-        image_crop=image_crop,
         augmentation=augmentation,
+        data_config=data_config,
     )
     return images, labels.gpu()
 
 
 @pipeline_def
-def dali_validation_pipeline(images_dir: str, image_size: int, image_crop: int):
+def dali_validation_pipeline(
+    images_dir: str,
+    data_config: dict,
+):
     images, labels = fn.readers.file(
         file_root=images_dir, random_shuffle=False, pad_last_batch=True, name="Reader"
     )
     images = apply_validation_augmentations(
-        images=images, image_size=image_size, image_crop=image_crop
+        images=images,
+        data_config=data_config,
     )
     return images, labels.gpu()
 
@@ -132,10 +155,9 @@ def dali_validation_pipeline(images_dir: str, image_size: int, image_crop: int):
 def dali_train_loader(
     images_dir: str,
     batch_size: int,
+    data_config: dict,
     num_threads: int = 4,
     device_id: int = 0,
-    image_size: int = 224,
-    image_crop: int = 224,
     augmentation: str = "default",
 ):
     pipeline_kwargs = {
@@ -145,9 +167,8 @@ def dali_train_loader(
     }
     pipe = dali_training_pipeline(
         images_dir=images_dir,
-        image_size=image_size,
-        image_crop=image_crop,
         augmentation=augmentation,
+        data_config=data_config,
         **pipeline_kwargs,
     )
     train_loader = DALIClassificationIterator(
@@ -160,10 +181,9 @@ def dali_train_loader(
 def dali_val_loader(
     images_dir: str,
     batch_size: int,
+    data_config: dict,
     num_threads: int = 4,
     device_id: int = 0,
-    image_size: int = 224,
-    image_crop: int = 224,
 ):
     pipeline_kwargs = {
         "batch_size": batch_size,
@@ -172,8 +192,7 @@ def dali_val_loader(
     }
     pipe = dali_validation_pipeline(
         images_dir=images_dir,
-        image_size=image_size,
-        image_crop=image_crop,
+        data_config=data_config,
         **pipeline_kwargs,
     )
     val_loader = DALIClassificationIterator(

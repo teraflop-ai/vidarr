@@ -326,8 +326,6 @@ def train(
     warmup_steps: float = 0.10,
     decay_steps: Optional[float] = 0.10,
     num_threads: int = 4,
-    image_size: int = 224,
-    image_crop: int = 224,
     use_scaler: bool = False,
     use_compile: bool = False,
     train_classification_head: bool = False,
@@ -349,23 +347,6 @@ def train(
     token: Optional[str] = None,
     private: bool = False,
 ):
-    train_dataloader = dali_train_loader(
-        images_dir=train_dir,
-        batch_size=batch_size,
-        num_threads=num_threads,
-        image_size=image_size,
-        image_crop=image_crop,
-        augmentation=augmentation,
-    )
-
-    val_dataloader = dali_val_loader(
-        images_dir=val_dir,
-        batch_size=batch_size,
-        num_threads=num_threads,
-        image_size=image_size,
-        image_crop=image_crop,
-    )
-
     model = load_model(
         model_name=model_name,
         num_classes=num_classes,
@@ -373,10 +354,27 @@ def train(
         drop_rate=drop_rate,
         train_classification_head=train_classification_head,
     )
+    data_config = timm.data.resolve_model_data_config(model)
+
     if use_compile:
         model_train = torch.compile(model, fullgraph=fullgraph, mode=compile_mode)
     else:
         model_train = model
+
+    train_dataloader = dali_train_loader(
+        images_dir=train_dir,
+        batch_size=batch_size,
+        num_threads=num_threads,
+        augmentation=augmentation,
+        data_config=data_config,
+    )
+
+    val_dataloader = dali_val_loader(
+        images_dir=val_dir,
+        batch_size=batch_size,
+        num_threads=num_threads,
+        data_config=data_config,
+    )
 
     mixup_fn = load_mixup(
         metric_type=metric_type,
