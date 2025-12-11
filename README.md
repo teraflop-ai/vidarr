@@ -22,8 +22,6 @@ if __name__ == "__main__":
         scheduler_type="cosine",
         warmup_steps=0.10,
         num_threads=12,
-        image_size=288,
-        image_crop=288,
         use_scaler=False,
         use_compile=True,
         metric_type="multiclass",
@@ -54,8 +52,6 @@ if __name__ == "__main__":
         test_dir="/image_datasets/jpeg_experiment/test_data",
         num_classes=2,
         batch_size=512,
-        image_size=384,
-        crop_size=384,
         num_threads=12,
         use_compile=True,
     )

@@ -12,8 +12,6 @@ if __name__ == "__main__":
         scheduler_type="cosine",
         warmup_steps=0.10,
         num_threads=12,
-        image_size=224,
-        image_crop=224,
         use_scaler=False,
         use_compile=True,
         metric_type="binary",
