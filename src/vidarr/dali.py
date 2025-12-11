@@ -44,7 +44,10 @@ def default_augmentations(images):
 
 
 def apply_training_augmentations(
-    images, image_size: int, image_crop: int, augmentation: str = "default"
+    images,
+    image_size: int,
+    image_crop: int,
+    augmentation: str,
 ):
     images = fn.decoders.image_random_crop(
         images, device="mixed", output_type=types.RGB
